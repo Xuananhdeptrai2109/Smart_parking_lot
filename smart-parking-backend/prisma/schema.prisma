@@ -1,0 +1,439 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model IncidentLog {
+  id           Int                      @id @default(autoincrement())
+  deviceId     Int
+  incidentType IncidentLog_incidentType
+  severity     IncidentLog_severity
+  timestamp    DateTime?                @default(now()) @db.DateTime(0)
+  resolved     Boolean?                 @default(false)
+  notes        String?                  @db.Text
+  IoTDevice    IoTDevice                @relation(fields: [deviceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "IncidentLog_ibfk_1")
+
+  @@index([deviceId], map: "deviceId")
+}
+
+model IoTDevice {
+  id           Int              @id @default(autoincrement())
+  deviceCode   String           @unique @db.VarChar(100)
+  type         IoTDevice_type
+  ipAddress    String?          @db.VarChar(50)
+  location     String           @db.VarChar(255)
+  status       IoTDevice_status @default(ONLINE)
+  lastSeenAt   DateTime?        @db.DateTime(0)
+  metadata     Json?
+  IncidentLog  IncidentLog[]
+  DeviceEvent  DeviceEvent[]
+}
+
+model DeviceEvent {
+  id         Int       @id @default(autoincrement())
+  eventId    String    @unique @db.VarChar(100)
+  deviceCode String    @db.VarChar(100)
+  eventType  String    @db.VarChar(100)
+  payload    Json
+  occurredAt DateTime  @db.DateTime(3)
+  receivedAt DateTime  @default(now()) @db.DateTime(3)
+  IoTDevice  IoTDevice @relation(fields: [deviceCode], references: [deviceCode], onDelete: Cascade)
+
+  @@index([deviceCode, occurredAt])
+}
+
+model DeviceCommand {
+  id            Int                 @id @default(autoincrement())
+  commandId     String              @unique @db.VarChar(100)
+  domain        CommandDomain
+  deviceCode    String              @db.VarChar(100)
+  topic         String              @db.VarChar(255)
+  commandType   String              @db.VarChar(100)
+  payload       Json
+  qos           Int                 @default(1)
+  retained      Boolean             @default(false)
+  status        DeviceCommandStatus @default(PENDING)
+  createdAt     DateTime            @default(now()) @db.DateTime(3)
+  sentAt        DateTime?           @db.DateTime(3)
+  acknowledgedAt DateTime?          @db.DateTime(3)
+  failureReason String?             @db.VarChar(255)
+
+  @@index([status, createdAt])
+  @@index([deviceCode, createdAt])
+}
+
+model Gate {
+  id               Int           @id @default(autoincrement())
+  gateCode         String        @unique @db.VarChar(50)
+  direction        GateDirection
+  sensorDeviceCode String        @unique @db.VarChar(100)
+  servoDeviceCode  String        @unique @db.VarChar(100)
+  state            GateState     @default(CLOSED)
+  openAngle        Int           @default(90)
+  closedAngle      Int           @default(0)
+  autoCloseMs      Int           @default(5000)
+  lastUpdated      DateTime      @updatedAt @db.DateTime(3)
+  PassageEvent     GatePassageEvent[]
+}
+
+model GatePassageEvent {
+  id              Int             @id @default(autoincrement())
+  eventId         String          @unique @db.VarChar(100)
+  gateId          Int
+  direction       GateDirection
+  imageUrl        String?         @db.VarChar(500)
+  imageHalf       CameraImageHalf
+  recognizedPlate String?         @db.VarChar(50)
+  rfidUid         String?         @db.VarChar(100)
+  result          GateEventResult @default(PENDING)
+  reason          String?         @db.VarChar(255)
+  sessionId       Int?
+  occurredAt      DateTime        @db.DateTime(3)
+  createdAt       DateTime        @default(now()) @db.DateTime(3)
+  Gate            Gate            @relation(fields: [gateId], references: [id], onDelete: Cascade)
+  ParkingSession  ParkingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([gateId, occurredAt])
+  @@index([sessionId])
+}
+
+model CameraCapture {
+  id          Int      @id @default(autoincrement())
+  eventId     String   @unique @db.VarChar(100)
+  deviceCode  String   @db.VarChar(100)
+  imageUrl    String   @db.VarChar(500)
+  leftPlate   String?  @db.VarChar(50)
+  rightPlate  String?  @db.VarChar(50)
+  capturedAt  DateTime @db.DateTime(3)
+  createdAt   DateTime @default(now()) @db.DateTime(3)
+}
+
+model AccessCard {
+  id         Int              @id @default(autoincrement())
+  uid        String           @unique @db.VarChar(100)
+  status     AccessCardStatus @default(AVAILABLE)
+  label      String?          @db.VarChar(100)
+  createdAt  DateTime         @default(now()) @db.DateTime(0)
+  Assignment CardAssignment[]
+}
+
+model CardAssignment {
+  id        Int            @id @default(autoincrement())
+  cardId    Int
+  sessionId Int            @unique
+  issuedAt  DateTime       @default(now()) @db.DateTime(3)
+  returnedAt DateTime?     @db.DateTime(3)
+  AccessCard AccessCard     @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  Session    ParkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([cardId, returnedAt])
+}
+
+model MonthlyPass {
+  id        Int      @id @default(autoincrement())
+  vehicleId Int      @unique(map: "vehicleId")
+  startDate DateTime @db.DateTime(0)
+  endDate   DateTime @db.DateTime(0)
+  isActive  Boolean? @default(true)
+  Vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "MonthlyPass_ibfk_1")
+}
+
+model ParkingSession {
+  id               Int                   @id @default(autoincrement())
+  vehicleId        Int?
+  assignedSpotId   Int?
+  entryTime        DateTime?             @default(now()) @db.DateTime(0)
+  entryImage       String                @db.VarChar(500)
+  entryGate        String                @db.VarChar(100)
+  exitTime         DateTime?             @db.DateTime(0)
+  exitImage        String?               @db.VarChar(500)
+  exitGate         String?               @db.VarChar(100)
+  status           ParkingSession_status @default(ACTIVE)
+  Vehicle          Vehicle?              @relation(fields: [vehicleId], references: [id], onUpdate: NoAction, map: "ParkingSession_ibfk_1")
+  AssignedSpot     ParkingSpot?          @relation(fields: [assignedSpotId], references: [id], onDelete: SetNull)
+  Payment          Payment?
+  CardAssignment   CardAssignment?
+  GatePassageEvent GatePassageEvent[]
+
+  @@index([vehicleId], map: "vehicleId")
+  @@index([assignedSpotId])
+  @@index([status])
+}
+
+model ParkingSpot {
+  id               Int                @id @default(autoincrement())
+  zoneId           Int
+  spotName         String             @db.VarChar(50)
+  sensorDeviceCode String             @unique @db.VarChar(100)
+  ledDeviceCode    String             @unique @db.VarChar(100)
+  status           ParkingSpot_status @default(FREE)
+  lastDistanceCm   Float?
+  lastUpdated      DateTime?          @default(now()) @db.DateTime(3)
+  Zone             Zone               @relation(fields: [zoneId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "ParkingSpot_ibfk_1")
+  ParkingSession   ParkingSession[]
+  SpotStateEvent   SpotStateEvent[]
+
+  @@unique([zoneId, spotName])
+  @@index([zoneId], map: "zoneId")
+}
+
+model SpotStateEvent {
+  id         Int                @id @default(autoincrement())
+  eventId    String             @unique @db.VarChar(100)
+  spotId     Int
+  occupied   Boolean
+  distanceCm Float?
+  status     ParkingSpot_status
+  occurredAt DateTime           @db.DateTime(3)
+  createdAt  DateTime           @default(now()) @db.DateTime(3)
+  ParkingSpot ParkingSpot       @relation(fields: [spotId], references: [id], onDelete: Cascade)
+
+  @@index([spotId, occurredAt])
+}
+
+model Payment {
+  id              Int                   @id @default(autoincrement())
+  sessionId       Int                   @unique(map: "sessionId")
+  amount          Decimal               @db.Decimal(10, 2)
+  paymentMethod   Payment_paymentMethod?
+  paymentStatus   Payment_paymentStatus @default(PENDING)
+  provider        String?               @db.VarChar(50)
+  providerOrderId String?               @unique @db.VarChar(100)
+  providerTransactionId String?         @db.VarChar(100)
+  checkoutToken   String?               @unique @db.VarChar(100)
+  pricingDetails  Json?
+  expiresAt       DateTime?             @db.DateTime(3)
+  confirmedBy     String?               @db.VarChar(100)
+  createdAt       DateTime              @default(now()) @db.DateTime(3)
+  transactionTime DateTime?             @db.DateTime(0)
+  ParkingSession  ParkingSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Payment_ibfk_1")
+
+  @@index([paymentStatus, createdAt])
+}
+
+model FireIncident {
+  id                Int                @id @default(autoincrement())
+  status            FireIncidentStatus @default(DETECTED)
+  detectedAt        DateTime           @default(now()) @db.DateTime(3)
+  resolvedAt        DateTime?          @db.DateTime(3)
+  estimatedX        Int?
+  estimatedY        Int?
+  confidence        Float?
+  gasLevel          Float?
+  maxFlameIntensity Float?
+  horizontalAngle   Int?
+  verticalAngle     Int?
+  pumpStartedAt     DateTime?          @db.DateTime(3)
+  pumpStoppedAt     DateTime?          @db.DateTime(3)
+  notes             String?            @db.Text
+  Snapshot          FireDetectionSnapshot[]
+  Action            FireAction[]
+
+  @@index([status, detectedAt])
+}
+
+model FireDetectionSnapshot {
+  id        Int           @id @default(autoincrement())
+  eventId   String        @unique @db.VarChar(100)
+  incidentId Int?
+  flameNW   Float
+  flameNE   Float
+  flameSW   Float
+  flameSE   Float
+  gasLevel  Float
+  estimatedX Int?
+  estimatedY Int?
+  confidence Float?
+  occurredAt DateTime     @db.DateTime(3)
+  createdAt DateTime      @default(now()) @db.DateTime(3)
+  Incident  FireIncident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([incidentId, occurredAt])
+}
+
+model FireAction {
+  id           Int              @id @default(autoincrement())
+  commandId    String           @unique @db.VarChar(100)
+  incidentId   Int
+  actionType   FireActionType
+  status       DeviceCommandStatus @default(PENDING)
+  payload      Json
+  requestedAt  DateTime         @default(now()) @db.DateTime(3)
+  acknowledgedAt DateTime?      @db.DateTime(3)
+  failureReason String?         @db.VarChar(255)
+  Incident     FireIncident     @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId, requestedAt])
+}
+
+model User {
+  id          Int       @id @default(autoincrement())
+  fullName    String    @db.VarChar(255)
+  phoneNumber String?   @unique(map: "phoneNumber") @db.VarChar(20)
+  email       String?   @unique(map: "email") @db.VarChar(255)
+  role        User_role
+  createdAt   DateTime? @default(now()) @db.DateTime(0)
+  Vehicle     Vehicle[]
+}
+
+model Vehicle {
+  id             Int                 @id @default(autoincrement())
+  userId         Int?
+  licensePlate   String              @unique(map: "licensePlate") @db.VarChar(50)
+  vehicleType    Vehicle_vehicleType
+  MonthlyPass    MonthlyPass?
+  ParkingSession ParkingSession[]
+  User           User?               @relation(fields: [userId], references: [id], onUpdate: NoAction, map: "Vehicle_ibfk_1")
+
+  @@index([userId], map: "userId")
+}
+
+model Zone {
+  id          Int           @id @default(autoincrement())
+  zoneName    String        @unique @db.VarChar(100)
+  capacity    Int
+  ParkingSpot ParkingSpot[]
+}
+
+enum IoTDevice_type {
+  CAMERA
+  RFID_READER
+  OBSTACLE_SENSOR
+  FLAME_SENSOR
+  GAS_SENSOR
+  BARRIER_SERVO
+  NOZZLE_SERVO
+  STATUS_LED
+  BUZZER
+  WATER_PUMP
+  RELAY
+}
+
+enum GateDirection {
+  ENTRY
+  EXIT
+}
+
+enum GateState {
+  CLOSED
+  OPENING
+  OPEN
+  CLOSING
+  BLOCKED
+  ERROR
+  EVACUATION
+}
+
+enum CameraImageHalf {
+  LEFT
+  RIGHT
+}
+
+enum GateEventResult {
+  PENDING
+  ALLOWED
+  DENIED
+  COMPLETED
+}
+
+enum AccessCardStatus {
+  AVAILABLE
+  ISSUED
+  LOST
+  DISABLED
+}
+
+enum IncidentLog_incidentType {
+  FIRE
+  FORCE_ENTRY
+  CONNECTION_LOST
+}
+
+enum ParkingSpot_status {
+  FREE
+  RESERVED
+  OCCUPIED
+  MAINTENANCE
+}
+
+enum FireIncidentStatus {
+  DETECTED
+  AIMING
+  SUPPRESSING
+  RESOLVED
+  FALSE_ALARM
+}
+
+enum FireActionType {
+  BUZZER_ON
+  BUZZER_OFF
+  AIM_SERVOS
+  PUMP_ON
+  PUMP_OFF
+  ENTER_EVACUATION
+  EXIT_EVACUATION
+}
+
+enum DeviceCommandStatus {
+  PENDING
+  SENT
+  ACKNOWLEDGED
+  FAILED
+}
+
+enum CommandDomain {
+  ACCESS
+  PARKING
+  FIRE
+  SYSTEM
+}
+
+enum Payment_paymentMethod {
+  CASH
+  QR_SANDBOX
+  CREDIT_CARD
+  MOMO
+  VNPAY
+  MONTHLY_PASS
+}
+
+enum Vehicle_vehicleType {
+  CAR
+  MOTORBIKE
+}
+
+enum IncidentLog_severity {
+  LOW
+  MEDIUM
+  CRITICAL
+}
+
+enum Payment_paymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum User_role {
+  ADMIN
+  MANAGER
+  CUSTOMER
+}
+
+enum IoTDevice_status {
+  ONLINE
+  OFFLINE
+  ERROR
+}
+
+enum ParkingSession_status {
+  ACTIVE
+  COMPLETED
+}

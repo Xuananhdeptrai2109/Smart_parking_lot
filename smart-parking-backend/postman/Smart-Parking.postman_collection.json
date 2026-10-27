@@ -1,0 +1,145 @@
+{
+  "info": {
+    "name": "Smart Parking - Full Hardware Flow",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "paymentId", "value": "" },
+    { "key": "checkoutToken", "value": "" },
+    { "key": "fireCommandId", "value": "" },
+    { "key": "fireIncidentId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/health" }
+    },
+    {
+      "name": "2. Vehicle entry - right camera half",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"entry-{{$guid}}\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"rfidUid\": \"CARD001\",\n  \"vehicleType\": \"CAR\",\n  \"cameraDeviceCode\": \"CAMERA_MAIN\",\n  \"imageUrl\": \"https://example.com/entry.jpg\",\n  \"rightPlate\": \"30A-123.45\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/access/entry"
+      }
+    },
+    {
+      "name": "3. Spot A1 occupied",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"spot-{{$guid}}\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"spotName\": \"A1\",\n  \"occupied\": true,\n  \"distanceCm\": 7.5\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/parking/spots/events"
+      }
+    },
+    {
+      "name": "4. Parking status",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/parking/status" }
+    },
+    {
+      "name": "5. Vehicle exit - left camera half",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "exec": [
+            "const data = pm.response.json().data;",
+            "if (data.payment) pm.collectionVariables.set('paymentId', data.payment.id);"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"exit-{{$guid}}\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"rfidUid\": \"CARD001\",\n  \"cameraDeviceCode\": \"CAMERA_MAIN\",\n  \"imageUrl\": \"https://example.com/exit.jpg\",\n  \"leftPlate\": \"30A-123.45\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/access/exit"
+      }
+    },
+    {
+      "name": "6. List payments",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/payments" }
+    },
+    {
+      "name": "7A. Confirm cash (choose cash OR QR)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"confirmedBy\": \"POSTMAN_OPERATOR\"\n}" },
+        "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/cash/confirm"
+      }
+    },
+    {
+      "name": "7B. Create QR sandbox (choose cash OR QR)",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "exec": [
+            "const data = pm.response.json().data;",
+            "if (data.payment) pm.collectionVariables.set('checkoutToken', data.payment.checkoutToken);"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/qr-sandbox"
+      }
+    },
+    {
+      "name": "7C. Confirm QR sandbox",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/v1/payments/checkout/{{checkoutToken}}/sandbox-confirm"
+      }
+    },
+    {
+      "name": "8. Fire alarm and aim",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "exec": [
+            "const data = pm.response.json().data;",
+            "pm.collectionVariables.set('fireIncidentId', data.incident.id);",
+            "const aim = data.newActions.find(action => action.actionType === 'AIM_SERVOS');",
+            "if (aim) pm.collectionVariables.set('fireCommandId', aim.commandId);"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"fire-{{$guid}}\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"flameNW\": 0.95,\n  \"flameNE\": 0.4,\n  \"flameSW\": 0.2,\n  \"flameSE\": 0.1,\n  \"gasLevel\": 0.75\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/fire/snapshots"
+      }
+    },
+    {
+      "name": "9. Confirm servos aimed - starts pump command",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"success\": true\n}" },
+        "url": "{{baseUrl}}/api/v1/fire/actions/{{fireCommandId}}/ack"
+      }
+    },
+    {
+      "name": "10. Resolve fire incident",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"resolution\": \"RESOLVED\",\n  \"notes\": \"Manual verification completed\"\n}" },
+        "url": "{{baseUrl}}/api/v1/fire/incidents/{{fireIncidentId}}/resolve"
+      }
+    }
+  ]
+}

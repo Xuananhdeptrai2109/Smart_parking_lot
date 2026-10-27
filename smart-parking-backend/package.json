@@ -1,0 +1,35 @@
+{
+  "name": "smart-parking-backend",
+  "version": "1.0.0",
+  "description": "Distributed IoT backend for access control, parking monitoring and fire safety",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js",
+    "test": "node --test",
+    "db:seed": "prisma db seed",
+    "db:push": "prisma db push",
+    "card:register": "node scripts/register-access-card.js",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "postinstall": "prisma generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "mqtt": "^5.10.4",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "prisma": "5.22.0"
+  }
+}
