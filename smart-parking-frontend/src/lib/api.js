@@ -1,5 +1,9 @@
-const defaultBaseUrl = `${window.location.protocol}//${window.location.hostname}:3000`;
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || defaultBaseUrl;
+const defaultBaseUrl = typeof window !== 'undefined'
+  ? (import.meta.env.PROD ? '' : `${window.location.protocol}//${window.location.hostname}:3000`)
+  : '';
+const configuredBaseUrl = typeof import.meta.env.VITE_API_BASE_URL === 'string'
+  ? import.meta.env.VITE_API_BASE_URL
+  : defaultBaseUrl;
 
 export const API_BASE_URL = configuredBaseUrl.replace(/\/$/, '');
 

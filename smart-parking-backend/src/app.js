@@ -18,6 +18,7 @@ const eventBus = require('./infrastructure/eventBus');
 const realtime = require('./infrastructure/realtime');
 const commandService = require('./services/commandService');
 const prisma = require('./config/db');
+const simulatorService = require('./services/simulatorService');
 
 const app = express();
 const server = http.createServer(app);
@@ -112,10 +113,14 @@ if (require.main === module) {
     commandRetryTimer.unref();
     server.listen(PORT, () => {
         console.log(`🚀 Server is running on http://localhost:${PORT}`);
+        if (process.env.ENABLE_DEMO_SIMULATOR === 'true') {
+            simulatorService.start();
+        }
     });
 
     const shutdown = async (signal) => {
         console.log(`\n${signal} received. Shutting down...`);
+        simulatorService.stop();
         clearInterval(commandRetryTimer);
         server.close(async () => {
             await eventBus.stop();
