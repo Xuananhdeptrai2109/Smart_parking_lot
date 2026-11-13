@@ -11,6 +11,7 @@ const parkingRoutes = require('./routes/parkingRoutes');
 const fireRoutes = require('./routes/fireRoutes');
 const deviceRoutes = require('./routes/deviceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const anprRoutes = require('./routes/anprRoutes');
 const registerSocketHandlers = require('./sockets/socketManager');
 const registerMqttHandlers = require('./infrastructure/mqttRouter');
 const eventBus = require('./infrastructure/eventBus');
@@ -24,6 +25,7 @@ const server = http.createServer(app);
 const allowedOrigin = process.env.CORS_ORIGIN || '*';
 app.use(cors({ origin: allowedOrigin }));
 app.use(express.json({ limit: '1mb' })); // Phân tích JSON body từ thiết bị IoT
+app.use('/uploads/anpr', express.static(process.env.ANPR_STORAGE_DIR || require('path').resolve(process.cwd(), 'storage', 'anpr')));
 
 // Đăng ký API Routes
 app.use('/api/v1/sessions', entryRoutes);
@@ -32,6 +34,7 @@ app.use('/api/v1/parking', parkingRoutes);
 app.use('/api/v1/fire', fireRoutes);
 app.use('/api/v1/devices', deviceRoutes);
 app.use('/api/v1/payments', paymentRoutes);
+app.use('/api/v1/anpr', anprRoutes);
 
 app.get('/health', (req, res) => {
     res.json({
@@ -39,6 +42,12 @@ app.get('/health', (req, res) => {
         service: 'smart-parking-backend',
         mqtt: eventBus.isConnected() ? 'connected' : 'disconnected',
     });
+});
+
+// Plain HTTP bootstrap time for ESP32 devices on networks that block NTP.
+// No credentials or device data are exchanged by this endpoint.
+app.get('/time', (req, res) => {
+    res.json({ unixTime: Math.floor(Date.now() / 1000) });
 });
 
 // Cấu hình WebSocket cho các tính năng realtime (bảng LED, báo cháy)

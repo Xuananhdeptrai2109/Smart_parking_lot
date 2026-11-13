@@ -11,6 +11,7 @@ const EVENT_META = {
   gate_state_changed: ['Trạng thái cổng thay đổi', 'access', 'info'],
   spot_status_changed: ['Vị trí đỗ cập nhật', 'parking', 'info'],
   fire_snapshot: ['Đã nhận dữ liệu cảm biến cháy', 'fire', 'neutral'],
+  gas_warning: ['Cảnh báo khí gas – cần nhân viên kiểm tra', 'fire', 'warning'],
   fire_alarm: ['Cảnh báo cháy', 'fire', 'danger'],
   fire_action_updated: ['Thiết bị PCCC đã phản hồi', 'fire', 'warning'],
   fire_resolved: ['Sự cố cháy đã kết thúc', 'fire', 'success'],
@@ -30,6 +31,11 @@ function makeEvent(type, payload) {
     detail = payload?.reason || 'Yêu cầu không hợp lệ';
   } else if (type === 'device_heartbeat') {
     detail = payload?.device?.deviceCode || payload?.event?.deviceCode || 'Thiết bị IoT';
+  } else if (type === 'gas_warning') {
+    const gasLevel = payload?.snapshot?.gasLevel;
+    detail = Number.isFinite(Number(gasLevel))
+      ? `Mức gas ${Math.round(Number(gasLevel) * 100)}%`
+      : 'Yêu cầu kiểm tra tại chỗ';
   } else if (type.startsWith('fire_')) {
     detail = payload?.incident?.status || payload?.action?.actionType || '';
   } else if (type.startsWith('payment_')) {
@@ -167,7 +173,7 @@ export function useParkingSystem() {
             if (parkingResult.status === 'fulfilled') setParking(parkingResult.value);
           });
         }
-        if (eventName.startsWith('fire_')) {
+        if (eventName.startsWith('fire_') || eventName === 'gas_warning') {
           api.fireStatus().then(setFire).catch(() => {});
         }
         if (eventName.startsWith('payment_')) {

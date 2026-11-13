@@ -17,11 +17,13 @@ function numberFromEnv(name, fallback) {
 function getFireConfig() {
     return {
         flameThreshold: numberFromEnv('FIRE_FLAME_THRESHOLD', 0.65),
-        gasThreshold: numberFromEnv('FIRE_GAS_THRESHOLD', 0.7),
-        panMinAngle: numberFromEnv('FIRE_PAN_MIN_ANGLE', 20),
-        panMaxAngle: numberFromEnv('FIRE_PAN_MAX_ANGLE', 160),
-        tiltMinAngle: numberFromEnv('FIRE_TILT_MIN_ANGLE', 40),
-        tiltMaxAngle: numberFromEnv('FIRE_TILT_MAX_ANGLE', 120),
+        gasThreshold: numberFromEnv('FIRE_GAS_THRESHOLD', 0.90),
+        nozzleAngles: {
+            NW: numberFromEnv('FIRE_NOZZLE_ANGLE_NW', 49),
+            NE: numberFromEnv('FIRE_NOZZLE_ANGLE_NE', 131),
+            SW: numberFromEnv('FIRE_NOZZLE_ANGLE_SW', 15),
+            SE: numberFromEnv('FIRE_NOZZLE_ANGLE_SE', 165),
+        },
         pumpMaxRunSeconds: numberFromEnv('FIRE_PUMP_MAX_RUN_SECONDS', 30),
     };
 }
@@ -46,6 +48,16 @@ function estimateFireLocation(readings, config = getFireConfig()) {
     const maxFlameIntensity = Math.max(...allValues);
     const flameDetected = maxFlameIntensity >= config.flameThreshold;
     const total = allValues.reduce((sum, value) => sum + value, 0);
+    const cornerEntries = [
+        ['NW', values.nw],
+        ['NE', values.ne],
+        ['SW', values.sw],
+        ['SE', values.se],
+    ];
+    const [targetCorner] = cornerEntries.reduce(
+        (strongest, current) => current[1] > strongest[1] ? current : strongest,
+        cornerEntries[0],
+    );
 
     if (!flameDetected || total === 0) {
         return {
@@ -54,6 +66,7 @@ function estimateFireLocation(readings, config = getFireConfig()) {
             estimatedX: null,
             estimatedY: null,
             confidence: 0,
+            targetCorner: null,
             horizontalAngle: null,
             verticalAngle: null,
         };
@@ -65,12 +78,7 @@ function estimateFireLocation(readings, config = getFireConfig()) {
     const estimatedX = clamp(Math.round(rawX), 0, 4);
     const estimatedY = clamp(Math.round(rawY), 0, 4);
     const confidence = Number((maxFlameIntensity / total).toFixed(3));
-    const horizontalAngle = Math.round(
-        config.panMinAngle + (estimatedX / 4) * (config.panMaxAngle - config.panMinAngle),
-    );
-    const verticalAngle = Math.round(
-        config.tiltMinAngle + (estimatedY / 4) * (config.tiltMaxAngle - config.tiltMinAngle),
-    );
+    const horizontalAngle = config.nozzleAngles?.[targetCorner] ?? 90;
 
     return {
         flameDetected,
@@ -78,8 +86,9 @@ function estimateFireLocation(readings, config = getFireConfig()) {
         estimatedX,
         estimatedY,
         confidence,
+        targetCorner,
         horizontalAngle,
-        verticalAngle,
+        verticalAngle: null,
     };
 }
 
@@ -99,6 +108,7 @@ function parseSnapshot(input) {
         eventId,
         occurredAt,
         gasLevel,
+        flameConfirmed: input.flameConfirmed !== false,
         flameNW: Number(input.flameNW),
         flameNE: Number(input.flameNE),
         flameSW: Number(input.flameSW),
@@ -185,7 +195,9 @@ async function processSnapshot(input) {
     const config = getFireConfig();
     const location = estimateFireLocation(snapshot, config);
     const gasDetected = snapshot.gasLevel >= config.gasThreshold;
-    const hazardDetected = location.flameDetected || gasDetected;
+    // Gas alone is a maintenance/safety warning. Only a confirmed flame creates
+    // a fire incident or starts the evacuation/suppression sequence.
+    const hazardDetected = location.flameDetected && snapshot.flameConfirmed;
 
     const result = await prisma.$transaction(async (tx) => {
         const duplicate = await tx.fireDetectionSnapshot.findUnique({
@@ -193,14 +205,28 @@ async function processSnapshot(input) {
             include: { Incident: { include: { Action: true } } },
         });
         if (duplicate) {
-            return { duplicate: true, hazardDetected, snapshot: duplicate, incident: duplicate.Incident, newActions: [] };
+            return {
+                duplicate: true,
+                hazardDetected,
+                gasWarning: gasDetected,
+                snapshot: duplicate,
+                incident: duplicate.Incident,
+                newActions: [],
+            };
         }
 
         if (!hazardDetected) {
             const stored = await tx.fireDetectionSnapshot.create({
                 data: buildSnapshotData(snapshot, location, null),
             });
-            return { duplicate: false, hazardDetected: false, snapshot: stored, incident: null, newActions: [] };
+            return {
+                duplicate: false,
+                hazardDetected: false,
+                gasWarning: gasDetected,
+                snapshot: stored,
+                incident: null,
+                newActions: [],
+            };
         }
 
         let incident = await tx.fireIncident.findFirst({
@@ -221,7 +247,7 @@ async function processSnapshot(input) {
                     gasLevel: snapshot.gasLevel,
                     maxFlameIntensity: location.maxFlameIntensity,
                     horizontalAngle: location.horizontalAngle,
-                    verticalAngle: location.verticalAngle,
+                    verticalAngle: null,
                 },
                 include: { Action: true },
             });
@@ -236,7 +262,7 @@ async function processSnapshot(input) {
                     gasLevel: Math.max(incident.gasLevel || 0, snapshot.gasLevel),
                     maxFlameIntensity: Math.max(incident.maxFlameIntensity || 0, location.maxFlameIntensity),
                     horizontalAngle: location.horizontalAngle ?? incident.horizontalAngle,
-                    verticalAngle: location.verticalAngle ?? incident.verticalAngle,
+                    verticalAngle: null,
                 },
                 include: { Action: true },
             });
@@ -258,8 +284,9 @@ async function processSnapshot(input) {
             actionData.push(buildAction(incident.id, 'AIM_SERVOS', {
                 gridX: location.estimatedX,
                 gridY: location.estimatedY,
+                targetCorner: location.targetCorner,
+                servoAngle: location.horizontalAngle,
                 horizontalAngle: location.horizontalAngle,
-                verticalAngle: location.verticalAngle,
             }));
         }
 
@@ -273,6 +300,7 @@ async function processSnapshot(input) {
             hazardDetected: true,
             flameDetected: location.flameDetected,
             gasDetected,
+            gasWarning: gasDetected,
             snapshot: storedSnapshot,
             incident,
             newActions,
@@ -285,6 +313,8 @@ async function processSnapshot(input) {
 
     if (result.hazardDetected) {
         realtime.emit('fire_alarm', result);
+    } else if (result.gasWarning) {
+        realtime.emit('gas_warning', result);
     } else {
         realtime.emit('fire_snapshot', result.snapshot);
     }
@@ -375,13 +405,50 @@ async function resolveIncident(id, resolution = 'RESOLVED', notes) {
 }
 
 async function getFireStatus() {
-    return prisma.fireIncident.findFirst({
-        orderBy: { detectedAt: 'desc' },
-        include: {
-            Action: { orderBy: { requestedAt: 'asc' } },
-            Snapshot: { orderBy: { occurredAt: 'desc' }, take: 10 },
-        },
-    });
+    const [incident, latestSnapshot] = await Promise.all([
+        prisma.fireIncident.findFirst({
+            orderBy: { detectedAt: 'desc' },
+            include: {
+                Action: { orderBy: { requestedAt: 'asc' } },
+                Snapshot: { orderBy: { occurredAt: 'desc' }, take: 10 },
+            },
+        }),
+        prisma.fireDetectionSnapshot.findFirst({ orderBy: { occurredAt: 'desc' } }),
+    ]);
+    const config = getFireConfig();
+    const latestLocation = latestSnapshot
+        ? estimateFireLocation(latestSnapshot, config)
+        : null;
+    const aimAction = incident?.Action?.find((action) => action.actionType === 'AIM_SERVOS');
+    const aimPayload = aimAction?.payload && typeof aimAction.payload === 'object'
+        ? aimAction.payload
+        : {};
+    const maxFlameIntensity = latestSnapshot
+        ? Math.max(
+            latestSnapshot.flameNW,
+            latestSnapshot.flameNE,
+            latestSnapshot.flameSW,
+            latestSnapshot.flameSE,
+        )
+        : (incident?.maxFlameIntensity ?? null);
+
+    return {
+        ...(incident || {}),
+        status: incident?.status || 'SAFE',
+        gasLevel: latestSnapshot?.gasLevel ?? incident?.gasLevel ?? null,
+        maxFlameIntensity,
+        gasWarning: Boolean(latestSnapshot && latestSnapshot.gasLevel >= config.gasThreshold),
+        targetCorner: latestLocation?.targetCorner || aimPayload.targetCorner || null,
+        horizontalAngle: latestLocation?.horizontalAngle
+            ?? incident?.horizontalAngle
+            ?? aimPayload.servoAngle
+            ?? null,
+        verticalAngle: null,
+        gasThreshold: config.gasThreshold,
+        flameThreshold: config.flameThreshold,
+        Snapshot: latestSnapshot ? [latestSnapshot] : (incident?.Snapshot || []),
+        Action: incident?.Action || [],
+    };
 }
 
 module.exports = {

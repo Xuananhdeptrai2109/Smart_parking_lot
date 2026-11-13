@@ -5,10 +5,12 @@ const { estimateFireLocation } = require('../src/services/fireService');
 
 const config = {
     flameThreshold: 0.65,
-    panMinAngle: 20,
-    panMaxAngle: 160,
-    tiltMinAngle: 40,
-    tiltMaxAngle: 120,
+    nozzleAngles: {
+        NW: 49,
+        NE: 131,
+        SW: 15,
+        SE: 165,
+    },
 };
 
 test('estimates north-west fire at coordinate (0, 4)', () => {
@@ -22,8 +24,9 @@ test('estimates north-west fire at coordinate (0, 4)', () => {
     assert.equal(result.flameDetected, true);
     assert.equal(result.estimatedX, 0);
     assert.equal(result.estimatedY, 4);
-    assert.equal(result.horizontalAngle, 20);
-    assert.equal(result.verticalAngle, 120);
+    assert.equal(result.targetCorner, 'NW');
+    assert.equal(result.horizontalAngle, 49);
+    assert.equal(result.verticalAngle, null);
 });
 
 test('estimates balanced fire at center of 5x5 grid', () => {
@@ -36,8 +39,9 @@ test('estimates balanced fire at center of 5x5 grid', () => {
 
     assert.equal(result.estimatedX, 2);
     assert.equal(result.estimatedY, 2);
-    assert.equal(result.horizontalAngle, 90);
-    assert.equal(result.verticalAngle, 80);
+    assert.equal(result.targetCorner, 'NW');
+    assert.equal(result.horizontalAngle, 49);
+    assert.equal(result.verticalAngle, null);
 });
 
 test('does not aim when all flame readings are below threshold', () => {

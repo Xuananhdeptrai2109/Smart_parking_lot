@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Camera,
   CarFront,
@@ -10,6 +10,111 @@ import {
 import { api } from '../lib/api';
 import { formatDateTime, formatDuration, normalizePlate } from '../lib/format';
 import { GateCard, MetricCard, Panel, PanelHeader, StatusPill } from '../components/UI';
+
+const previewToken = import.meta.env.VITE_CAMERA_PREVIEW_TOKEN || '';
+
+function normalizeCameraUrl(value) {
+  const trimmed = String(value || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+
+function CameraPreview() {
+  const [cameraUrl, setCameraUrl] = useState(() => localStorage.getItem('cameraPreviewUrl') || 'http://192.168.1.10');
+  const [cameraInput, setCameraInput] = useState(cameraUrl);
+  const [enabled, setEnabled] = useState(true);
+  const [streamNonce, setStreamNonce] = useState(Date.now());
+  const [previewStatus, setPreviewStatus] = useState('loading');
+  const reconnectTimer = useRef(null);
+  const reconnectAttempt = useRef(0);
+
+  useEffect(() => () => {
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+  }, []);
+
+  function markStreamOnline() {
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+    reconnectTimer.current = null;
+    reconnectAttempt.current = 0;
+    setPreviewStatus('online');
+  }
+
+  function reconnectStream() {
+    setPreviewStatus('error');
+    if (!enabled || reconnectTimer.current) return;
+    const delay = Math.min(5000, 1200 + reconnectAttempt.current * 600);
+    reconnectTimer.current = setTimeout(() => {
+      reconnectTimer.current = null;
+      reconnectAttempt.current += 1;
+      setPreviewStatus('loading');
+      setStreamNonce(Date.now());
+    }, delay);
+  }
+
+  function saveCameraUrl() {
+    const normalized = normalizeCameraUrl(cameraInput);
+    if (!normalized) return;
+    localStorage.setItem('cameraPreviewUrl', normalized);
+    setCameraUrl(normalized);
+    setCameraInput(normalized);
+    reconnectAttempt.current = 0;
+    setPreviewStatus('loading');
+    setStreamNonce(Date.now());
+  }
+
+  const imageUrl = previewToken && cameraUrl
+    ? `${cameraUrl}/stream?token=${encodeURIComponent(previewToken)}&v=${streamNonce}`
+    : '';
+  const statusLabel = previewStatus === 'online'
+    ? 'Video trực tiếp'
+    : previewStatus === 'error' ? 'Đang kết nối lại' : 'Đang kết nối';
+
+  return (
+    <section className="camera-preview-section">
+      <div className="camera-preview-head">
+        <div>
+          <span className="eyebrow">CAMERA BIỂN SỐ · XEM TRƯỚC</span>
+          <h3>Căn góc trước khi quẹt thẻ</h3>
+          <p>Video MJPEG CIF khoảng 10 FPS; ảnh OCR XGA được xử lý riêng sau khi quẹt thẻ.</p>
+        </div>
+        <span className={`camera-preview-status ${previewStatus}`}><i />{statusLabel}</span>
+      </div>
+
+      <div className="camera-preview-frame">
+        {enabled && imageUrl ? (
+          <img
+            src={imageUrl}
+            alt="Hình ảnh trực tiếp từ ESP32-CAM"
+            onLoad={markStreamOnline}
+            onError={reconnectStream}
+          />
+        ) : (
+          <div className="camera-preview-placeholder"><Camera size={34} /><span>Xem trước đang tạm dừng</span></div>
+        )}
+        <div className="camera-lane-divider" />
+        {enabled && previewStatus === 'online' && (
+          <span className="camera-live-badge"><i />LIVE · MJPEG</span>
+        )}
+        <span className="camera-lane-label exit">CỔNG RA · NỬA TRÁI</span>
+        <span className="camera-lane-label entry">CỔNG VÀO · NỬA PHẢI</span>
+      </div>
+
+      <div className="camera-preview-controls">
+        <label>
+          <span>Địa chỉ ESP32-CAM</span>
+          <input value={cameraInput} onChange={(event) => setCameraInput(event.target.value)} placeholder="http://192.168.1.10" />
+        </label>
+        <button className="secondary-button" type="button" onClick={saveCameraUrl}>Lưu địa chỉ</button>
+        <button className="secondary-button" type="button" onClick={() => {
+          setEnabled((current) => !current);
+          setPreviewStatus('loading');
+          setStreamNonce(Date.now());
+        }}>{enabled ? 'Tạm dừng' : 'Bật xem trước'}</button>
+      </div>
+      {!previewToken && <div className="inline-message">Frontend chưa có VITE_CAMERA_PREVIEW_TOKEN.</div>}
+    </section>
+  );
+}
 
 function SessionResult({ session }) {
   if (!session) return null;
@@ -76,6 +181,7 @@ export default function Access({ access }) {
             <><GateCard gate={{ direction: 'ENTRY' }} /><GateCard gate={{ direction: 'EXIT' }} /></>
           )}
         </div>
+        <CameraPreview />
       </Panel>
 
       <div className="access-content-grid">
@@ -92,9 +198,9 @@ export default function Access({ access }) {
         <Panel>
           <PanelHeader eyebrow="QUY TRÌNH" title="Xác thực tại cổng" />
           <div className="access-flow">
-            <div><span>1</span><Camera /><strong>Chụp biển số</strong><p>Nửa phải cho xe vào, nửa trái cho xe ra.</p></div>
+            <div><span>1</span><CreditCard /><strong>Quét thẻ RFID</strong><p>Thực hiện khi xe đã dừng đúng vùng camera.</p></div>
             <i />
-            <div><span>2</span><CreditCard /><strong>Quét thẻ RFID</strong><p>Cấp thẻ khi vào và thu lại khi xe ra.</p></div>
+            <div><span>2</span><Camera /><strong>Chụp biển số</strong><p>Nửa phải cho xe vào, nửa trái cho xe ra.</p></div>
             <i />
             <div><span>3</span><ShieldCheck /><strong>Backend xác thực</strong><p>Đối chiếu biển số, thẻ và sức chứa.</p></div>
           </div>

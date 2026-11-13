@@ -6,7 +6,11 @@ async function createSnapshot(req, res, next) {
     try {
         const result = await fireService.processSnapshot(req.body || {});
         return res.status(result.duplicate ? 200 : 201).json({
-            message: result.hazardDetected ? 'Đã phát hiện nguy cơ cháy.' : 'Không phát hiện nguy cơ cháy.',
+            message: result.hazardDetected
+                ? 'Đã phát hiện lửa.'
+                : result.gasWarning
+                    ? 'Phát hiện khí gas; yêu cầu nhân viên kiểm tra.'
+                    : 'Không phát hiện nguy cơ cháy.',
             data: result,
         });
     } catch (error) {

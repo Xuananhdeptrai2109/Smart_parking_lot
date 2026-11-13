@@ -33,6 +33,16 @@ test('GET /health returns service status', async () => {
     });
 });
 
+test('GET /time returns a current Unix timestamp for device clock bootstrap', async () => {
+    const before = Math.floor(Date.now() / 1000);
+    const response = await fetch(`${baseUrl}/time`);
+    const body = await response.json();
+    const after = Math.floor(Date.now() / 1000);
+
+    assert.equal(response.status, 200);
+    assert.ok(body.unixTime >= before && body.unixTime <= after);
+});
+
 test('unknown route returns JSON 404', async () => {
     const response = await fetch(`${baseUrl}/not-found`);
     const body = await response.json();

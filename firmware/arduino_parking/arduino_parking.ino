@@ -3,6 +3,7 @@
  *
  * Chức năng:
  * - Đọc 4 cảm biến vật cản digital cho A1..A4.
+ * - Chỉ xác nhận có xe/trống khi tín hiệu giữ ổn định liên tục 5 giây.
  * - Điều khiển 4 cặp LED rời: mỗi vị trí có 1 LED đỏ và 1 LED xanh.
  * - Gửi trạng thái sang ESP32 Gateway bằng SoftwareSerial.
  * - Nhận lệnh LED từ ESP32 Gateway.
@@ -26,12 +27,15 @@ const uint8_t SENSOR_PINS[SPOT_COUNT] = {2, 3, 4, 5};
 const uint8_t RED_PINS[SPOT_COUNT] = {7, 8, 9, 10};
 const uint8_t GREEN_PINS[SPOT_COUNT] = {12, 13, A0, A1};
 
-// Arduino RX=A3 nhận từ ESP32 TX17; Arduino TX=A4 gửi qua chia áp tới ESP32 RX16.
-SoftwareSerial espLink(A3, A4); // RX, TX
+// Arduino RX=A3 nhận từ ESP32 TX17; Arduino TX=D6 gửi qua chia áp tới ESP32 RX32.
+// D6 thay A4 để loại trừ chân/đường UART cũ đang không truyền được dữ liệu.
+SoftwareSerial espLink(A3, 6); // RX=A3, TX=D6
 
-const unsigned long DEBOUNCE_MS = 250;
+// Cả chiều xe vào và xe rời đều phải ổn định đủ 5 giây mới đổi trạng thái.
+const unsigned long STATE_CONFIRM_MS = 5000;
 bool rawState[SPOT_COUNT];
 bool stableState[SPOT_COUNT];
+bool initialStatePending[SPOT_COUNT];
 unsigned long lastRawChangeAt[SPOT_COUNT];
 String inputLine;
 
@@ -68,6 +72,12 @@ void sendSpotState(uint8_t index) {
 }
 
 void handleEspCommand(const String &line) {
+  if (line == "STATE,ALL") {
+    for (uint8_t i = 0; i < SPOT_COUNT; i++) {
+      if (!initialStatePending[i]) sendSpotState(i);
+    }
+    return;
+  }
   if (!line.startsWith("LED,")) return;
 
   int firstComma = line.indexOf(',');
@@ -111,7 +121,12 @@ void scanSensors() {
       lastRawChangeAt[i] = now;
     }
 
-    if (rawState[i] != stableState[i] && now - lastRawChangeAt[i] >= DEBOUNCE_MS) {
+    if (initialStatePending[i] && now - lastRawChangeAt[i] >= STATE_CONFIRM_MS) {
+      stableState[i] = rawState[i];
+      initialStatePending[i] = false;
+      sendSpotState(i);
+    } else if (!initialStatePending[i] && rawState[i] != stableState[i] &&
+               now - lastRawChangeAt[i] >= STATE_CONFIRM_MS) {
       stableState[i] = rawState[i];
       sendSpotState(i);
     }
@@ -128,13 +143,14 @@ void setup() {
     pinMode(GREEN_PINS[i], OUTPUT);
 
     rawState[i] = digitalRead(SENSOR_PINS[i]) == LOW;
-    stableState[i] = rawState[i];
+    // Khởi động ở trạng thái an toàn "trống", sau đó đo thực tế đủ 5 giây.
+    stableState[i] = false;
+    initialStatePending[i] = true;
     lastRawChangeAt[i] = millis();
-    setSpotLed(i, stableState[i] ? "RED" : "GREEN");
+    setSpotLed(i, "GREEN");
   }
 
-  delay(1000);
-  for (uint8_t i = 0; i < SPOT_COUNT; i++) sendSpotState(i);
+  Serial.println("=== PARKING SENSOR READY: 5-second confirmation ===");
 }
 
 void loop() {

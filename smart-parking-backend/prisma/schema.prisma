@@ -73,8 +73,8 @@ model Gate {
   sensorDeviceCode String        @unique @db.VarChar(100)
   servoDeviceCode  String        @unique @db.VarChar(100)
   state            GateState     @default(CLOSED)
-  openAngle        Int           @default(90)
-  closedAngle      Int           @default(0)
+  openAngle        Int           @default(105)
+  closedAngle      Int           @default(15)
   autoCloseMs      Int           @default(5000)
   lastUpdated      DateTime      @updatedAt @db.DateTime(3)
   PassageEvent     GatePassageEvent[]

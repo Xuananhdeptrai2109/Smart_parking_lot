@@ -1,6 +1,6 @@
 export const STATUS_LABELS = {
   FREE: 'Còn trống',
-  OCCUPIED: 'Đã có xe',
+  OCCUPIED: 'Đang giữ chỗ',
   RESERVED: 'Đã giữ chỗ',
   MAINTENANCE: 'Bảo trì',
   OPEN: 'Đang mở',

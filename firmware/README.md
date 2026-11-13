@@ -5,9 +5,9 @@ Hệ thống active hiện có bốn chương trình, tương ứng bốn bo m�
 | Bo mạch | File cần nạp | Chức năng |
 |---|---|---|
 | ESP32 thường số 1 | `esp32_main_controller/esp32_main_controller.ino` | Cổng vào/ra, RC522, hai servo barrier, cầu UART với Arduino và phối hợp ESP32-CAM |
-| ESP32 thường số 2 | `esp32_fire_controller/esp32_fire_controller.ino` | Bốn cảm biến lửa, cảm biến gas, hai servo vòi phun, relay còi/bơm và nút dừng khẩn cấp |
+| ESP32 thường số 2 | `esp32_fire_controller/esp32_fire_controller.ino` | Bốn cảm biến lửa, cảm biến gas, một servo vòi phun, relay còi/bơm và nút dừng khẩn cấp |
 | AI Thinker ESP32-CAM | `esp32_cam/esp32_cam.ino` | Chụp ảnh và gửi kết quả biển số qua MQTT |
-| Arduino Uno | `arduino_parking/arduino_parking.ino` | Bốn cảm biến vị trí cùng bốn cặp LED đỏ/xanh |
+| Arduino Uno | `arduino_parking/arduino_parking.ino` | Bốn cảm biến vị trí, xác nhận trạng thái 5 giây và điều khiển bốn cặp LED đỏ/xanh |
 
 ## Trước khi nạp
 
@@ -34,7 +34,7 @@ Thư viện cần cài:
 4. Nạp ESP32 PCCC khi chưa nối bơm/còi vào tiếp điểm relay; kiểm tra sensor và servo trước.
 5. Test relay bằng LED tải ngoài.
 6. Chỉ nối bơm/còi sau khi relay OFF đúng lúc khởi động và nút dừng khẩn cấp hoạt động.
-7. Chỉ đổi `ENABLE_LOCAL_AUTONOMOUS_MODE=true` sau khi hoàn thành toàn bộ kiểm thử cơ khí và nguồn.
+7. Firmware FIRE hiện bật xử lý tự động cục bộ. Khi thử lần đầu, tháo tải bơm/còi khỏi relay và kiểm tra bằng LED trước.
 
 Sơ đồ dây chi tiết nằm trong `../so_do_mach.md`.
 

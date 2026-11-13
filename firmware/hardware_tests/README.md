@@ -23,8 +23,8 @@ ESP32 số 2 (FIRE), relay, bơm, còi và ESP32-CAM phải tắt trong đợt t
 ### A. Test servo không cần cảm biến
 
 1. Nạp `esp32_gate_test.ino`, bật nguồn Buck B cho hai servo và mở Serial Monitor `115200 baud`.
-2. Gửi `E`: servo cửa vào mở 90°, giữ khoảng 2 giây rồi đóng 0°.
-3. Gửi `X`: servo cửa ra mở 90°, giữ khoảng 2 giây rồi đóng 0°.
+2. Gửi `E`: servo cửa vào trên GPIO27 đi từ 15° đến 105° (quay 90°), giữ khoảng 2 giây rồi đóng về 15°.
+3. Gửi `X`: servo cửa ra trên GPIO26 đi từ 15° đến 105° (quay 90°), giữ khoảng 2 giây rồi đóng về 15°.
 4. Gửi `C`: cả hai servo đóng ngay. Gửi `S`: in trạng thái.
 
 Serial báo đúng nhưng servo không quay: kiểm tra nguồn Buck B, GND chung và dây signal. Servo rung hoặc ESP32 reset: nguồn servo yếu hoặc GND chưa tốt.
@@ -83,7 +83,7 @@ Với từng vị trí A1 đến A4:
 
 ## 4. Điều kiện đạt
 
-- Hai servo quay đúng cửa, đúng 0°/90° và không làm ESP32 reset.
+- Hai servo quay đúng cửa, từ 15° đến 105° (đủ 90°) và không làm ESP32 reset.
 - Hai cảm biến cổng ổn định ít nhất 10 lần mỗi bên.
 - RC522 đọc cùng một UID ít nhất 5 lần.
 - Cả tám LED sáng đúng màu trong bài self-test.

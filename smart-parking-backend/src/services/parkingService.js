@@ -24,6 +24,10 @@ function summarizeSpots(spots) {
     };
 }
 
+function statusFromOccupancy(occupied) {
+    return occupied ? 'OCCUPIED' : 'FREE';
+}
+
 async function getLotStatus() {
     const spots = await prisma.parkingSpot.findMany({
         where: { spotName: { in: PARKING_SPOT_NAMES } },
@@ -62,15 +66,9 @@ async function processSpotState(input) {
             throw new AppError(`Không tìm thấy vị trí đỗ ${spotName}.`, 404);
         }
 
-        const activeAssignment = input.occupied
-            ? null
-            : await tx.parkingSession.findFirst({
-                where: { assignedSpotId: spot.id, status: 'ACTIVE' },
-                select: { id: true },
-            });
-        const nextStatus = input.occupied
-            ? 'OCCUPIED'
-            : (activeAssignment ? 'RESERVED' : 'FREE');
+        // Trạng thái thực tế của chỗ đỗ phải theo cảm biến. Khi xe đã rời ô
+        // đủ 5 giây, ô được trả về FREE dù phiên xe đang chờ thanh toán/cổng ra.
+        const nextStatus = statusFromOccupancy(input.occupied);
 
         const updatedSpot = await tx.parkingSpot.update({
             where: { id: spot.id },
@@ -123,6 +121,7 @@ async function processSpotState(input) {
 
 module.exports = {
     summarizeSpots,
+    statusFromOccupancy,
     getLotStatus,
     processSpotState,
 };

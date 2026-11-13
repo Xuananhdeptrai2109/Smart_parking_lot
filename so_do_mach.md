@@ -11,7 +11,7 @@ Hệ thống dùng **2 ESP32 thường, 1 ESP32-CAM và 1 Arduino Uno**:
 | **ESP32-CAM** | Chụp ảnh biển số | `firmware/esp32_cam/esp32_cam.ino` |
 | **Arduino Uno** | 4 vị trí đỗ, 8 LED đỏ/xanh | `firmware/arduino_parking/arduino_parking.ino` |
 
-> GPIO trùng số trên hai ESP32 là hai chân hoàn toàn khác nhau. Ví dụ GPIO25 của ESP32 số 1 (GATE) điều khiển servo cửa, còn GPIO25 của ESP32 số 2 (FIRE) điều khiển servo vòi ngang.
+> GPIO trùng số trên hai ESP32 là hai chân hoàn toàn khác nhau. Ví dụ GPIO27 của ESP32 số 1 (GATE) điều khiển servo cửa vào, còn GPIO27 của ESP32 số 2 (FIRE) điều khiển relay còi.
 
 ## 1. Nguồn điện
 
@@ -47,11 +47,11 @@ Pin 2S/BMS (+) ── Buck B IN+
 Pin 2S/BMS (-) ── Buck B IN-
 
 Buck B OUT+ đã chỉnh đúng 5,0 V
-├── dây đỏ của 4 servo
+├── dây đỏ của 3 servo (2 servo cổng + 1 servo vòi)
 └── Relay COM1 (nguồn bơm)
 
 Buck B OUT-
-├── dây nâu/đen của 4 servo
+├── dây nâu/đen của 3 servo (2 servo cổng + 1 servo vòi)
 ├── Bơm (-)
 └── nối một điểm với Adapter GND
 ```
@@ -103,7 +103,7 @@ Không nối chung hai chân OUT.
 |---|---|---|
 | Cửa vào | Đỏ — V+ | Buck B OUT+ 5 V |
 | Cửa vào | Nâu/đen — GND | Buck B OUT- |
-| Cửa vào | Vàng/cam/trắng — Signal | ESP32 số 1 (GATE) GPIO25 |
+| Cửa vào | Vàng/cam/trắng — Signal | ESP32 số 1 (GATE) GPIO27 |
 | Cửa ra | Đỏ — V+ | Buck B OUT+ 5 V |
 | Cửa ra | Nâu/đen — GND | Buck B OUT- |
 | Cửa ra | Vàng/cam/trắng — Signal | ESP32 số 1 (GATE) GPIO26 |
@@ -128,20 +128,21 @@ RC522 chỉ dùng 3,3 V, không nối vào 5 V.
 ```text
 ESP32 số 1 (GATE) GPIO17/TX2 ───────────── Arduino A3/RX
 
-Arduino A4/TX ── 10 kΩ ── 10 kΩ ──●── ESP32 số 1 (GATE) GPIO16/RX2
-                                    │
-                                  10 kΩ
-                                    │
-                                  10 kΩ
-                                    │
-                                  10 kΩ
-                                    │
-                       Arduino/ESP32 GND
+Arduino D6/TX ── 10 kΩ ──●────────────── ESP32 số 1 (GATE) GPIO32/RX
+                          │
+                        10 kΩ
+                          │
+                        10 kΩ
+                          │
+                Arduino/ESP32 GND
 
 ESP32 số 1 (GATE) GND ─────────────────── Arduino GND
 ```
 
-Không dùng chân RX0/TX0 của Arduino cho đường này. Firmware dùng `A3/A4` làm SoftwareSerial.
+Điện trở đầu tiên là nhánh trên 10 kΩ; hai điện trở còn lại mắc nối tiếp thành
+nhánh dưới 20 kΩ. Bộ chia đưa mức TX 5 V của Arduino về khoảng 3,33 V an toàn
+cho GPIO32 ESP32. Không dùng chân RX0/TX0 của Arduino cho đường này; firmware
+dùng `A3/D6` làm SoftwareSerial.
 
 ## 3. Arduino Uno — bốn vị trí đỗ
 
@@ -222,18 +223,39 @@ Gas AO ── 10 kΩ ── 10 kΩ ──●── ESP32 số 2 (FIRE) GPIO32
                   Adapter GND/ESP32 GND
 ```
 
-Với cấu hình cảm biến lửa dùng `3V3`, tổng cộng cần đúng 20 điện trở `10 kΩ`: 10 con cho hai LM393 cổng, 5 con cho UART và 5 con cho gas.
+Với cấu hình cảm biến lửa dùng `3V3`, tổng cộng cần 18 điện trở `10 kΩ`: 10 con
+cho hai LM393 cổng, 3 con cho UART và 5 con cho gas.
 
-### Hai servo hướng vòi phun
+### Một servo hướng vòi phun
 
-| Servo | Dây servo | Nối với |
+| Thiết bị | Dây servo | Nối với |
 |---|---|---|
-| Ngang/pan | Đỏ — V+ | Buck B OUT+ 5 V |
-| Ngang/pan | Nâu/đen — GND | Buck B OUT- |
-| Ngang/pan | Vàng/cam/trắng — Signal | ESP32 số 2 (FIRE) GPIO25 |
-| Dọc/tilt | Đỏ — V+ | Buck B OUT+ 5 V |
-| Dọc/tilt | Nâu/đen — GND | Buck B OUT- |
-| Dọc/tilt | Vàng/cam/trắng — Signal | ESP32 số 2 (FIRE) GPIO26 |
+| Servo vòi phun | Đỏ — V+ | Buck B OUT+ 5 V |
+| Servo vòi phun | Nâu/đen — GND | Buck B OUT- |
+| Servo vòi phun | Vàng/cam/trắng — Signal | ESP32 số 2 (FIRE) GPIO25 |
+
+`GPIO26` của ESP32 FIRE để trống, không nối servo thứ hai.
+
+### Vị trí cơ khí vùng cháy 40 × 18 cm
+
+```text
+              cạnh 40 cm
+       NW ●────────────────────● NE
+          │                    │
+          │                    │ 18 cm
+          │                    │
+       SW ●────────────────────● SE
+                    │
+              cách khoảng 5 cm
+                    │
+          [servo + vòi phun]
+```
+
+- Bốn đầu cảm biến hướng hơi chúc xuống và hướng vào vùng bên trong hình chữ nhật.
+- Servo/vòi đặt ngoài, chính giữa cạnh `SW–SE`, hướng ban đầu vào tâm vùng cháy.
+- Góc mặc định trong firmware: `SW=15°`, `NW=49°`, `NE=131°`, `SE=165°`, vị trí nghỉ `90°`.
+- Nếu servo quay ngược, đổi cặp góc `SW ↔ SE` và `NW ↔ NE` trong firmware.
+- Chỉ lửa vượt ngưỡng mới bật còi, quay servo và bật bơm. Gas vượt ngưỡng chỉ gửi cảnh báo để nhân viên kiểm tra.
 
 ### Relay hai kênh
 

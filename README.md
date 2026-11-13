@@ -107,7 +107,7 @@ Smart_parking_lot/
 | Thiết bị | Chức năng | Firmware | Board Arduino IDE |
 |---|---|---|---|
 | ESP32 số 1 — GATE | Hai cảm biến cổng, hai servo, RC522, cầu UART Arduino | `firmware/esp32_main_controller/esp32_main_controller.ino` | `ESP32 Dev Module` |
-| ESP32 số 2 — FIRE | Bốn cảm biến lửa, gas, hai servo vòi, relay bơm/còi, nút dừng | `firmware/esp32_fire_controller/esp32_fire_controller.ino` | `ESP32 Dev Module` |
+| ESP32 số 2 — FIRE | Bốn cảm biến lửa, gas, một servo vòi, relay bơm/còi, nút dừng | `firmware/esp32_fire_controller/esp32_fire_controller.ino` | `ESP32 Dev Module` |
 | ESP32-CAM | Chụp ảnh dùng chung cho làn ra/vào | `firmware/esp32_cam/esp32_cam.ino` | `AI Thinker ESP32-CAM` |
 | Arduino Uno | Bốn cảm biến vị trí và tám LED | `firmware/arduino_parking/arduino_parking.ino` | `Arduino Uno` |
 
@@ -154,11 +154,11 @@ Pin 2S/BMS (+) ── Buck B IN+
 Pin 2S/BMS (-) ── Buck B IN-
 
 Buck B OUT+ 5,0 V
-├── dây đỏ của 4 servo
+├── dây đỏ của 3 servo (2 cổng + 1 vòi)
 └── Relay COM1 cấp bơm
 
 Buck B OUT-
-├── dây nâu/đen của 4 servo
+├── dây nâu/đen của 3 servo (2 cổng + 1 vòi)
 ├── Bơm (-)
 └── nối một điểm tới Adapter GND
 ```
@@ -200,10 +200,10 @@ Hai cảm biến dùng tổng cộng 10 điện trở 10 kΩ. Không nối chung
 
 | Servo | Dây đỏ | Dây nâu/đen | Dây vàng/cam/trắng |
 |---|---|---|---|
-| Cổng vào | Buck B OUT+ 5 V | Buck B OUT- | ESP32 GATE GPIO25 |
+| Cổng vào | Buck B OUT+ 5 V | Buck B OUT- | ESP32 GATE GPIO27 |
 | Cổng ra | Buck B OUT+ 5 V | Buck B OUT- | ESP32 GATE GPIO26 |
 
-Firmware dùng `0°` là đóng và `90°` là mở.
+Firmware dùng `15°` là đóng và `105°` là mở, nên hành trình thực là `105° - 15° = 90°`. Góc đóng 15° và dải xung 600–2300 µs giúp tránh ép servo sát giới hạn cơ khí.
 
 ### 5.3. RC522
 
@@ -225,15 +225,13 @@ RC522 chỉ dùng 3,3 V, tuyệt đối không cấp 5 V.
 ```text
 ESP32 GATE GPIO17/TX2 ─────────────── Arduino A3/RX
 
-Arduino A4/TX ── 10k ── 10k ──●──── ESP32 GATE GPIO16/RX2
-                                │
-                               10k
-                                │
-                               10k
-                                │
-                               10k
-                                │
-                               GND
+Arduino D6/TX ── 10k ──●──────────── ESP32 GATE GPIO32/RX
+                        │
+                       10k
+                        │
+                       10k
+                        │
+                       GND
 
 ESP32 GATE GND ───────────────────── Arduino GND
 ```
@@ -321,14 +319,13 @@ Gas AO ── 10k ── 10k ──●── GPIO32
                         GND
 ```
 
-### 7.3. Hai servo vòi phun
+### 7.3. Một servo vòi phun
 
 | Servo | Dây đỏ | Dây nâu/đen | Signal |
 |---|---|---|---|
-| Ngang/pan | Buck B OUT+ | Buck B OUT- | GPIO25 |
-| Dọc/tilt | Buck B OUT+ | Buck B OUT- | GPIO26 |
+| Servo vòi phun | Buck B OUT+ | Buck B OUT- | GPIO25 |
 
-Khung vòi phun đặt giữa một cạnh của vùng giám sát, hướng về tâm. Các góc servo cần hiệu chuẩn theo mô hình thực tế.
+GPIO26 của ESP32 FIRE để trống. Bốn cảm biến tạo hình chữ nhật `40 × 18 cm`; vòi phun đặt ngoài chính giữa cạnh `SW–SE`, lùi khoảng 5 cm và hướng về tâm. Góc khởi tạo: `SW=15°`, `NW=49°`, `NE=131°`, `SE=165°`; cần hiệu chuẩn lại theo cơ khí thực tế.
 
 ### 7.4. Relay hai kênh, bơm và còi
 
@@ -387,11 +384,12 @@ Nếu cảm biến được nhận dạng là OV3660, nên giữ cấu hình l�
 | Mục đích | Số lượng |
 |---|---:|
 | Chia áp OUT của hai LM393 cổng | 10 × 10 kΩ |
-| Chia áp Arduino A4/TX → ESP32 GPIO16/RX2 | 5 × 10 kΩ |
+| Chia áp Arduino D6/TX → ESP32 GPIO32/RX | 3 × 10 kΩ |
 | Chia áp gas AO → ESP32 FIRE GPIO32 | 5 × 10 kΩ |
 | Hạn dòng tám LED đỏ/xanh | 8 × 220 Ω |
 
-Tổng theo thiết kế hiện tại: **20 điện trở 10 kΩ và 8 điện trở 220 Ω**. Điện trở không phân cực.
+Điện trở không phân cực. Đường UART mới dùng ba điện trở 10 kΩ: một điện trở
+nhánh trên và hai điện trở nối tiếp xuống GND.
 
 ## 10. Giao tiếp phần mềm
 
@@ -554,6 +552,7 @@ Thẻ không được random tự động. Backend sử dụng đúng UID vật 
 ```text
 Xe đi vào ô được gán
 → cảm biến LM393 của ô chuyển active LOW
+→ tín hiệu giữ ổn định 5 giây
 → Arduino bật LED đỏ, tắt LED xanh
 → Arduino gửi trạng thái qua UART cho ESP32 GATE
 → ESP32 gửi MQTT lên backend
@@ -561,7 +560,7 @@ Xe đi vào ô được gán
 → frontend nhận sự kiện Socket.IO và cập nhật bản đồ
 ```
 
-Khi cảm biến không thấy xe, LED xanh bật và LED đỏ tắt. Arduino tự đổi LED theo cảm biến ngay cả khi mất backend.
+Khi cảm biến không thấy xe liên tục 5 giây, ô chuyển về `FREE`, LED xanh bật và LED đỏ tắt. Khi cảm biến thấy xe liên tục 5 giây, ô chuyển sang `OCCUPIED`, LED đỏ bật và LED xanh tắt. Arduino tự đổi LED theo cảm biến ngay cả khi mất backend.
 
 ### 14.3. Xe ra và thanh toán
 
@@ -594,17 +593,17 @@ QR sandbox chỉ mô phỏng thanh toán, không chuyển tiền thật.
 ```text
 ESP32 FIRE đọc 4 cảm biến lửa + cảm biến gas
 → gửi snapshot đã chuẩn hóa qua MQTT
-→ backend so ngưỡng và ước lượng tọa độ trên lưới 5×5
-→ bật còi và chuyển cổng sang chế độ thoát hiểm
-→ gửi góc pan/tilt cho hai servo
-→ chỉ sau khi nhận ACK ngắm thành công mới gửi PUMP_ON
-→ bơm có thời gian chạy tối đa và có nút dừng khẩn cấp
+→ gas vượt ngưỡng: chỉ cảnh báo nhân viên tới kiểm tra
+→ lửa vượt ngưỡng: bật còi và chọn cảm biến góc có tín hiệu mạnh nhất
+→ quay một servo vòi phun tới góc đã hiệu chuẩn
+→ sau khi servo ổn định và vẫn còn lửa mới bật bơm
+→ hết lửa 2 giây, quá 30 giây hoặc nhấn dừng khẩn cấp: tắt bơm
 → người vận hành resolve sự cố để tắt bơm/còi và thoát khẩn cấp
 ```
 
 Tọa độ quy ước: `SW=(0,0)`, `SE=(4,0)`, `NW=(0,4)`, `NE=(4,4)`.
 
-`ENABLE_LOCAL_AUTONOMOUS_MODE` trong firmware FIRE mặc định là `false`. Chỉ bật sau khi cảm biến, servo, relay, bơm và nút dừng đều đã được thử an toàn.
+`ENABLE_LOCAL_AUTONOMOUS_MODE` trong firmware FIRE đang bật để hệ thống vẫn phản ứng khi mất Wi-Fi/MQTT. Khi thử lần đầu phải tháo tải bơm/còi khỏi relay và kiểm tra bằng LED trước.
 
 ## 15. Trình tự kiểm thử
 
@@ -627,7 +626,7 @@ Tọa độ quy ước: `SW=(0,0)`, `SE=(4,0)`, `NW=(0,4)`, `NE=(4,4)`.
 ### Giai đoạn 3 — tích hợp FIRE
 
 1. Hiệu chuẩn từng cảm biến lửa và gas.
-2. Kiểm tra hai servo không gắn vòi/bơm.
+2. Kiểm tra một servo không gắn vòi/bơm.
 3. Kiểm tra relay không tải.
 4. Kiểm tra nút dừng khẩn cấp.
 5. Sau cùng mới nối còi và bơm, dùng nguồn có bảo vệ phù hợp.
@@ -638,7 +637,7 @@ Tọa độ quy ước: `SW=(0,0)`, `SE=(4,0)`, `NW=(0,4)`, `NE=(4,4)`.
 - Một ESP32-CAM và một RC522 dùng chung cho hai làn; firmware chỉ xử lý một yêu cầu vào hoặc ra tại một thời điểm.
 - Dịch vụ ANPR thực chưa nằm trong repository; `ANPR_URL` phải trỏ tới một dịch vụ riêng.
 - QR là sandbox, chưa tích hợp cổng thanh toán thật.
-- Chế độ chữa cháy tự động cục bộ mặc định tắt.
+- Chế độ chữa cháy tự động cục bộ đang bật; luôn thử relay không tải trước.
 - Cần kiểm tra/hoàn thiện việc chuyển ô từ `RESERVED` về `FREE` sau khi phiên thanh toán kết thúc để chạy nhiều lượt liên tục.
 - Mosquitto development đang cho phép kết nối đơn giản; triển khai thật phải bổ sung tài khoản, ACL và TLS.
 

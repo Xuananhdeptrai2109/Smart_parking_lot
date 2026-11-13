@@ -15,7 +15,7 @@ export default function Overview({ system, setPage }) {
   const { parking, access, fire, events, isFireActive } = system;
   const capacity = parking?.capacity ?? 4;
   const available = parking?.available ?? '—';
-  const utilization = parking ? Math.round(((parking.occupied + parking.reserved) / Math.max(1, parking.capacity)) * 100) : 0;
+  const utilization = parking ? Math.round((parking.occupied / Math.max(1, parking.capacity)) * 100) : 0;
   const gates = access?.gates || [];
   const latestSnapshot = fire?.Snapshot?.[0];
 
@@ -78,8 +78,7 @@ export default function Overview({ system, setPage }) {
           <ParkingMap parking={parking} />
           <div className="parking-legend">
             <span><i className="legend-free" />Còn trống</span>
-            <span><i className="legend-occupied" />Đã có xe</span>
-            <span><i className="legend-reserved" />Đã giữ chỗ</span>
+            <span><i className="legend-occupied" />Đang giữ chỗ (LED đỏ)</span>
             <span><i className="legend-maintenance" />Bảo trì</span>
           </div>
         </Panel>

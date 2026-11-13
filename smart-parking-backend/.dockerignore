@@ -1,0 +1,17 @@
+node_modules
+.env
+.env.*
+!.env.example
+!.env.production.example
+.git
+.gitignore
+coverage
+test
+postman
+database
+docs
+firmware_tests
+hardware_doc_staging
+hardware_firmware_staging
+*.log
+Readme.md

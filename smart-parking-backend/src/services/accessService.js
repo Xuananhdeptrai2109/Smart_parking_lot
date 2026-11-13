@@ -110,14 +110,14 @@ async function processEntry(input) {
             return createDeniedEvent(tx, gate, data, 'ENTRY', 'Hệ thống đang ở chế độ khẩn cấp.', 'BLOCKED');
         }
 
-        const spot = await tx.parkingSpot.findFirst({
+        const freeSpot = await tx.parkingSpot.findFirst({
             where: {
                 status: 'FREE',
                 spotName: { in: PARKING_SPOT_NAMES },
             },
             orderBy: [{ zoneId: 'asc' }, { spotName: 'asc' }],
         });
-        if (!spot) {
+        if (!freeSpot) {
             return createDeniedEvent(tx, gate, data, 'ENTRY', 'Bãi xe đã đầy.', 'BLOCKED');
         }
 
@@ -147,7 +147,6 @@ async function processEntry(input) {
         const session = await tx.parkingSession.create({
             data: {
                 vehicleId: vehicle.id,
-                assignedSpotId: spot.id,
                 entryTime: data.occurredAt,
                 entryImage: data.imageUrl,
                 entryGate: gate.gateCode,
@@ -157,7 +156,6 @@ async function processEntry(input) {
             data: { cardId: card.id, sessionId: session.id, issuedAt: data.occurredAt },
         });
         await tx.accessCard.update({ where: { id: card.id }, data: { status: 'ISSUED' } });
-        await tx.parkingSpot.update({ where: { id: spot.id }, data: { status: 'RESERVED' } });
         const event = await tx.gatePassageEvent.create({
             data: {
                 eventId: data.eventId,
@@ -191,7 +189,6 @@ async function processEntry(input) {
 
     result.command = await sendGateCommand(result.gate, 'OPEN', {
         sessionId: result.session.id,
-        assignedSpot: result.session.AssignedSpot?.spotName,
     });
     realtime.emit('vehicle_entered', result);
     return result;

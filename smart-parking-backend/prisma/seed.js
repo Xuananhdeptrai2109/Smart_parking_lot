@@ -56,7 +56,7 @@ async function main() {
 
     await prisma.gate.upsert({
         where: { gateCode: 'ENTRY_GATE' },
-        update: {},
+        update: { openAngle: 90, closedAngle: 0 },
         create: {
             gateCode: 'ENTRY_GATE',
             direction: 'ENTRY',
@@ -69,7 +69,7 @@ async function main() {
     });
     await prisma.gate.upsert({
         where: { gateCode: 'EXIT_GATE' },
-        update: {},
+        update: { openAngle: 90, closedAngle: 0 },
         create: {
             gateCode: 'EXIT_GATE',
             direction: 'EXIT',

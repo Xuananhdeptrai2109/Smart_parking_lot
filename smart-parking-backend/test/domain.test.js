@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { summarizeSpots } = require('../src/services/parkingService');
+const { summarizeSpots, statusFromOccupancy } = require('../src/services/parkingService');
 const { parseAccessInput } = require('../src/services/accessService');
 const { PARKING_SPOT_NAMES } = require('../src/config/parking');
 
@@ -21,6 +21,11 @@ test('summarizes the four parking spots and detects full state', () => {
     assert.equal(result.available, 0);
     assert.equal(result.occupied, 4);
     assert.equal(result.isFull, true);
+});
+
+test('returns a parking spot to FREE when its sensor is clear', () => {
+    assert.equal(statusFromOccupancy(true), 'OCCUPIED');
+    assert.equal(statusFromOccupancy(false), 'FREE');
 });
 
 test('entry reads the right half plate and normalizes RFID', () => {
