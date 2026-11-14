@@ -1,4 +1,30 @@
-{$PUBLIC_HOST:localhost} {
+# Cho phép truy cập trực tiếp bằng IP Public của EC2 qua cổng 80 (HTTP)
+:80 {
+    encode zstd gzip
+
+    handle /api/* {
+        reverse_proxy backend:3000
+    }
+
+    handle /socket.io/* {
+        reverse_proxy backend:3000
+    }
+
+    handle /uploads/* {
+        reverse_proxy backend:3000
+    }
+
+    handle /health {
+        reverse_proxy backend:3000
+    }
+
+    handle {
+        reverse_proxy frontend:80
+    }
+}
+
+# Hỗ trợ truy cập an toàn qua HTTPS khi dùng tên miền / sslip.io (phục vụ ESP32-CAM)
+https://{$PUBLIC_HOST:3-105-215-46.sslip.io} {
     encode zstd gzip
 
     handle /api/* {
