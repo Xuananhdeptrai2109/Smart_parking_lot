@@ -10,6 +10,26 @@ Hệ thống hiện dùng **2 ESP32 thường, 1 ESP32-CAM và 1 Arduino Uno**. 
 
 > Đây là mô hình demo/học tập, không phải hệ thống kiểm soát cháy được chứng nhận. Không thử lửa, bơm hoặc tải công suất khi chưa kiểm tra nguồn, relay và cơ cấu dừng khẩn cấp.
 
+## Trạng thái hiện tại
+
+Hệ thống đã được triển khai theo **mô hình IoT Level 4** và đã kiểm thử với thiết bị thật:
+
+| Thành phần | Trạng thái triển khai |
+|---|---|
+| Thiết bị biên | 2 ESP32 Dev Module, 1 ESP32-CAM và 1 Arduino Uno |
+| Xử lý cục bộ | Arduino lọc trạng thái chỗ đỗ; ESP32 FIRE tự phát hiện và xử lý cháy khi mất mạng |
+| Giao tiếp thiết bị | MQTT có tài khoản tại `mqtt.vuaiot.io.vn:1883` |
+| Backend | Node.js/Prisma chạy bằng Docker trên AWS EC2 |
+| Frontend | `https://vuaiot.io.vn` |
+| REST API và Socket.IO | `https://api.vuaiot.io.vn` |
+| Database | MySQL trên AWS RDS, chỉ cho phép EC2 truy cập qua mạng riêng VPC |
+| Reverse proxy và HTTPS | Caddy với chứng chỉ TLS tự động |
+| DNS | Tên miền quản lý qua Cloudflare |
+
+Các file firmware hiện tại đã được cấu hình để kết nối cloud. Thông tin Wi-Fi, MQTT, ANPR và database nằm trong các file bị Git bỏ qua; không ghi mật khẩu trực tiếp vào tài liệu hoặc commit lên repository.
+
+Việc phân loại Level 4 dựa trên bốn đặc điểm: có nhiều nút IoT, có xử lý cục bộ tại thiết bị, dữ liệu được lưu trên cloud và ứng dụng giám sát/điều khiển cũng chạy trên cloud. Đây là mức phù hợp cho đồ án và demo; các hạng mục để vận hành thương mại được ghi tại phần giới hạn cuối tài liệu.
+
 ## 1. Kiến trúc tổng thể
 
 ```text
@@ -39,7 +59,7 @@ Hệ thống hiện dùng **2 ESP32 thường, 1 ESP32-CAM và 1 Arduino Uno**. 
 │ REST + Socket.IO │          │ cảm biến + PCCC │
 └──────┬───────┬───┘          └──────────────────┘
        │       │
-       │       └──────────────► MySQL/Aiven
+       │       └──────────────► MySQL/AWS RDS
        │
        └── REST + Socket.IO ──► React dashboard
 ```
@@ -50,12 +70,17 @@ Hai ESP32 thường hoạt động độc lập:
 - ESP32 FIRE chưa lắp xong vẫn có thể tắt nguồn và kiểm thử toàn bộ cổng/bãi đỗ.
 - GPIO trùng số trên hai ESP32 là hai chân vật lý khác nhau.
 
+Khi triển khai cloud, Mosquitto, backend, frontend và Caddy chạy trong các container riêng trên AWS EC2. Backend kết nối AWS RDS bằng mạng riêng trong cùng VPC. Thiết bị chỉ cần mạng Wi-Fi 2,4 GHz có Internet, không cần cùng mạng với máy tính vận hành.
+
 ## 2. Cấu trúc thư mục
 
 ```text
 Smart_parking_lot/
 ├── README.md                         # tài liệu tổng quan này
 ├── so_do_mach.md                     # sơ đồ đấu dây chi tiết
+├── docker-compose.aws.yml            # triển khai cloud trên AWS EC2
+├── .env.aws.example                  # mẫu biến môi trường cloud, không chứa bí mật
+├── deploy/aws/                       # Caddy, Mosquitto và hướng dẫn AWS
 │
 ├── firmware/
 │   ├── README.md                     # hướng dẫn nạp firmware
@@ -203,7 +228,7 @@ Hai cảm biến dùng tổng cộng 10 điện trở 10 kΩ. Không nối chung
 | Cổng vào | Buck B OUT+ 5 V | Buck B OUT- | ESP32 GATE GPIO27 |
 | Cổng ra | Buck B OUT+ 5 V | Buck B OUT- | ESP32 GATE GPIO26 |
 
-Firmware dùng `15°` là đóng và `105°` là mở, nên hành trình thực là `105° - 15° = 90°`. Góc đóng 15° và dải xung 600–2300 µs giúp tránh ép servo sát giới hạn cơ khí.
+Firmware chính hiện dùng `0°` là đóng và `90°` là mở. Servo được ngắt PWM sau khi đã về vị trí đóng để giảm hiện tượng rung/rè; khi cổng đang mở, PWM vẫn được giữ để thanh chắn không tự rơi. Nếu cơ cấu thực tế chạm giới hạn, phải hiệu chỉnh hai hằng `GATE_CLOSED_ANGLE` và `GATE_OPEN_ANGLE` trong firmware thay vì ép tay servo.
 
 ### 5.3. RC522
 
@@ -374,8 +399,11 @@ Firmware dùng `INPUT_PULLUP`, không cần điện trở ngoài. Khi nhấn, co
   - nửa trái ảnh: xe ra;
   - nửa phải ảnh: xe vào.
 - Camera nên nhìn gần vuông góc biển số; ưu tiên ảnh rõ hơn một chiều cao cố định.
-- Firmware chụp JPEG UXGA và gửi ảnh tới `ANPR_URL`.
-- Repository hiện **không chứa dịch vụ ANPR**. Khi chưa có ANPR thật, đặt `USE_MOCK_ANPR=true` để thử luồng phần mềm; mock không kiểm tra độ chính xác đọc biển số.
+- Firmware dùng luồng MJPEG độ phân giải thấp để căn góc, sau đó chụp JPEG độ phân giải cao và gửi tới `ANPR_URL`.
+- Cấu hình cloud hiện gửi ảnh tới `https://api.vuaiot.io.vn/api/v1/anpr/recognize`; backend xác thực camera, lưu ảnh và gọi dịch vụ nhận dạng biển số đã cấu hình.
+- Engine ANPR không nằm trong repository. Khi chưa cấu hình dịch vụ nhận dạng thật, có thể dùng `USE_MOCK_ANPR=true` để kiểm thử luồng phần mềm; mock không đánh giá độ chính xác đọc biển số.
+- Video xem trước được phát trực tiếp từ địa chỉ HTTP nội bộ của ESP32-CAM. Khi mở frontend HTTPS, trình duyệt phải được cho phép truy cập mạng cục bộ và hiển thị nội dung HTTP không an toàn cho riêng `https://vuaiot.io.vn`.
+- Máy tính phải cùng LAN với ESP32-CAM để xem video trực tiếp. Chụp ảnh ANPR lên cloud vẫn hoạt động khi máy tính ở mạng khác.
 
 Nếu cảm biến được nhận dạng là OV3660, nên giữ cấu hình lật/độ sáng/màu đã hiệu chỉnh trong firmware chính.
 
@@ -430,7 +458,25 @@ Frontend tải trạng thái bằng REST và nhận cập nhật realtime qua So
 
 ## 11. Cấu hình mạng
 
-Ba firmware ESP32 đều phải đặt đúng:
+### 11.1. Chế độ cloud hiện tại
+
+Ba firmware ESP32 dùng Wi-Fi 2,4 GHz có Internet. Cấu hình MQTT và ANPR hiện tại:
+
+```cpp
+const char *MQTT_HOST = "mqtt.vuaiot.io.vn";
+const uint16_t MQTT_PORT = 1883;
+
+// Chỉ ESP32-CAM
+const char *ANPR_URL = "https://api.vuaiot.io.vn/api/v1/anpr/recognize";
+```
+
+`MQTT_USERNAME`, `MQTT_PASSWORD`, `CAMERA_PREVIEW_TOKEN` và khóa ANPR phải được đặt trong các file credentials cục bộ. Các file này đã nằm trong `.gitignore`.
+
+Máy tính có thể đổi mạng hoặc tắt mà hệ thống cloud vẫn hoạt động. ESP32 chỉ mất kết nối khi Wi-Fi của chính thiết bị bị thay đổi, mất Internet hoặc tên/mật khẩu Wi-Fi không đúng.
+
+### 11.2. Chế độ phát triển local
+
+Khi chạy toàn bộ hệ thống trên máy tính, ba firmware ESP32 phải đặt đúng:
 
 ```cpp
 const char *WIFI_SSID = "TEN_WIFI";
@@ -446,15 +492,18 @@ ipconfig
 
 Dùng địa chỉ IPv4 của card Wi-Fi, ví dụ `192.168.55.170`; không dùng `localhost` trong firmware. Máy tính và tất cả ESP32 phải ở cùng mạng, firewall phải cho phép cổng `1883` và `3000`.
 
+ESP32 chỉ hỗ trợ Wi-Fi 2,4 GHz. Router có thể đồng thời phát 2,4 GHz và 5 GHz; máy tính không bắt buộc dùng cùng băng tần khi chạy ở chế độ cloud.
+
 ## 12. Cài và chạy toàn hệ thống
 
 ### 12.1. Yêu cầu
 
 - Node.js và npm
 - Docker Desktop
-- MySQL/Aiven và một `DATABASE_URL` hợp lệ
+- MySQL local/Aiven hoặc AWS RDS và một `DATABASE_URL` hợp lệ
 - Arduino IDE cùng ESP32/Arduino board packages
-- Máy tính và các ESP32 dùng chung Wi-Fi
+- Khi chạy local: máy tính và các ESP32 dùng chung mạng LAN
+- Khi chạy cloud: các ESP32 chỉ cần Wi-Fi 2,4 GHz có Internet
 
 ### 12.2. Backend, database và MQTT
 
@@ -510,6 +559,32 @@ Thứ tự khuyến nghị:
 4. ESP32 FIRE: `esp32_fire_controller.ino`, chỉ sau khi đã kiểm tra relay không tải.
 
 Sau khi nạp, mở Serial Monitor đúng baud của từng sketch và xác nhận Wi-Fi/MQTT kết nối thành công.
+
+### 12.5. Triển khai cloud trên AWS
+
+Các thành phần cloud được định nghĩa trong `docker-compose.aws.yml`:
+
+- `mqtt`: Mosquitto nhận sự kiện từ thiết bị.
+- `backend`: REST API, Socket.IO, Prisma và MQTT router.
+- `frontend`: React build phục vụ bằng Nginx.
+- `caddy`: HTTPS và reverse proxy cho frontend/backend.
+
+File production thật là `smart-parking-backend/.env.production` và không được commit. Trên EC2, chạy từ thư mục dự án:
+
+```bash
+sudo docker compose \
+  --env-file smart-parking-backend/.env.production \
+  -f docker-compose.aws.yml up -d --build
+```
+
+Kiểm tra sau triển khai:
+
+```text
+https://vuaiot.io.vn
+https://api.vuaiot.io.vn/health
+```
+
+RDS phải liên kết với EC2 trong cùng VPC và chỉ mở MySQL `3306` từ security group của EC2, không mở database ra `0.0.0.0/0`.
 
 ## 13. Dữ liệu RFID hiện tại
 
@@ -635,11 +710,15 @@ Tọa độ quy ước: `SW=(0,0)`, `SE=(4,0)`, `NW=(0,4)`, `NE=(4,4)`.
 
 - Bãi đỗ có bốn vị trí A1–A4.
 - Một ESP32-CAM và một RC522 dùng chung cho hai làn; firmware chỉ xử lý một yêu cầu vào hoặc ra tại một thời điểm.
-- Dịch vụ ANPR thực chưa nằm trong repository; `ANPR_URL` phải trỏ tới một dịch vụ riêng.
+- Backend, frontend, MQTT và database đã chạy trên AWS; thiết bị thật đã kết nối và gửi dữ liệu thành công.
+- Engine ANPR nằm ngoài repository; backend cloud đóng vai trò xác thực, lưu ảnh và chuyển tiếp tới dịch vụ nhận dạng đã cấu hình.
 - QR là sandbox, chưa tích hợp cổng thanh toán thật.
 - Chế độ chữa cháy tự động cục bộ đang bật; luôn thử relay không tải trước.
-- Cần kiểm tra/hoàn thiện việc chuyển ô từ `RESERVED` về `FREE` sau khi phiên thanh toán kết thúc để chạy nhiều lượt liên tục.
-- Mosquitto development đang cho phép kết nối đơn giản; triển khai thật phải bổ sung tài khoản, ACL và TLS.
+- Trạng thái ô đỗ được quyết định trực tiếp bởi cảm biến sau 5 giây ổn định, không phụ thuộc phiên gửi xe hoặc thanh toán.
+- MQTT cloud hiện có tài khoản nhưng vẫn dùng TCP `1883` chưa mã hóa. Trước khi vận hành thương mại cần chuyển sang MQTT TLS `8883`, cấp danh tính riêng cho từng thiết bị và cấu hình ACL.
+- Video MJPEG là luồng HTTP trong LAN nên không thể xem từ Internet nếu không có gateway/tunnel hoặc cơ chế relay video bảo mật.
+- Hệ thống hiện là một EC2 đơn lẻ; vận hành thương mại cần bổ sung backup, giám sát, cảnh báo tài nguyên, high availability và quy trình khôi phục sự cố.
+- Đây là hệ thống IoT Level 4 phù hợp cho đồ án/demo, không phải hệ thống PCCC hoặc kiểm soát ra vào đã được chứng nhận.
 
 ## 17. Kiểm tra an toàn trước khi bật nguồn
 
@@ -662,3 +741,4 @@ Tọa độ quy ước: `SW=(0,0)`, `SE=(4,0)`, `NW=(0,4)`, `NE=(4,4)`.
 - Giao thức thiết bị: [`smart-parking-backend/docs/HARDWARE_PROTOCOL.md`](./smart-parking-backend/docs/HARDWARE_PROTOCOL.md)
 - Postman: [`smart-parking-backend/postman/`](./smart-parking-backend/postman/)
 - Frontend: [`smart-parking-frontend/README.md`](./smart-parking-frontend/README.md)
+- Triển khai AWS: [`deploy/aws/README.md`](./deploy/aws/README.md)

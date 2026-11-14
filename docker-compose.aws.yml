@@ -1,0 +1,122 @@
+name: smart-parking-cloud
+
+services:
+  mqtt-init:
+    image: eclipse-mosquitto:2
+    user: "0:0"
+    env_file:
+      - ${ENV_FILE:-./smart-parking-backend/.env.production}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        rm -f /mosquitto/data/password_file
+        && mosquitto_passwd -b -c /mosquitto/data/password_file
+        "$${MQTT_USERNAME}" "$${MQTT_PASSWORD}"
+        && chown 1883:1883 /mosquitto/data/password_file
+        && chmod 0700 /mosquitto/data/password_file
+    volumes:
+      - mqtt-data:/mosquitto/data
+    restart: "no"
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: smart-parking-cloud-mqtt
+    restart: unless-stopped
+    depends_on:
+      mqtt-init:
+        condition: service_completed_successfully
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./deploy/aws/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt-data:/mosquitto/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mosquitto_sub -h 127.0.0.1
+          -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}"
+          -t '$$SYS/broker/version' -C 1 -W 3
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    env_file:
+      - ${ENV_FILE:-./smart-parking-backend/.env.production}
+
+  backend:
+    build:
+      context: ./smart-parking-backend
+      dockerfile: Dockerfile
+    container_name: smart-parking-cloud-backend
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-./smart-parking-backend/.env.production}
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MQTT_BROKER_URL: mqtt://mqtt:1883
+      ANPR_STORAGE_DIR: /app/storage/anpr
+    expose:
+      - "3000"
+    volumes:
+      - anpr-images:/app/storage/anpr
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/health')
+          .then(r => { if (!r.ok) process.exit(1) })
+          .catch(() => process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+
+  frontend:
+    build:
+      context: ./smart-parking-frontend
+      dockerfile: Dockerfile.aws
+      args:
+        VITE_API_BASE_URL: ${PUBLIC_BASE_URL:-https://api.vuaiot.io.vn}
+        VITE_CAMERA_PREVIEW_TOKEN: ${VITE_CAMERA_PREVIEW_TOKEN:-}
+    container_name: smart-parking-cloud-frontend
+    restart: unless-stopped
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: smart-parking-cloud-caddy
+    restart: unless-stopped
+    environment:
+      FRONTEND_HOST: ${FRONTEND_HOST:-vuaiot.io.vn}
+      API_HOST: ${PUBLIC_HOST:-api.vuaiot.io.vn}
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  mqtt-data:
+  anpr-images:
+  caddy-data:
+  caddy-config:

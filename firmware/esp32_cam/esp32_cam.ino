@@ -38,8 +38,6 @@
 const uint16_t MQTT_PORT = 1883;
 const char *TOPIC_PREFIX = "smart-parking";
 
-// Đây là service nhận diện biển số riêng, không phải endpoint backend Node hiện tại.
-const char *ANPR_URL = "https://3-105-215-46.sslip.io/api/v1/anpr/recognize";
 const bool USE_MOCK_ANPR = false;
 const char *MOCK_LEFT_PLATE = "30A-123.45";
 const char *MOCK_RIGHT_PLATE = "30A-123.45";
@@ -457,6 +455,7 @@ void processCapture() {
   setPreviewCameraMode();
   xSemaphoreGive(cameraMutex);
 
+  WiFiClient plainClient;
   WiFiClientSecure secureClient;
   secureClient.setInsecure();
   HTTPClient http;
@@ -464,7 +463,12 @@ void processCapture() {
   int statusCode = -1;
   String response;
 
-  if (http.begin(secureClient, ANPR_URL)) {
+  const bool useHttps = String(ANPR_URL).startsWith("https://");
+  const bool connectionOpened = useHttps
+    ? http.begin(secureClient, ANPR_URL)
+    : http.begin(plainClient, ANPR_URL);
+
+  if (connectionOpened) {
     http.addHeader("Content-Type", "image/jpeg");
     http.addHeader("X-Device-Key", ANPR_DEVICE_KEY);
     http.addHeader("X-Event-Id", pendingEventId);
@@ -475,7 +479,8 @@ void processCapture() {
     if (statusCode != 0) response = http.getString();
     http.end();
   } else {
-    Serial.println("[ANPR] Cannot open HTTPS connection");
+    Serial.printf("[ANPR] Cannot open %s connection to %s\n",
+                  useHttps ? "HTTPS" : "HTTP", ANPR_URL);
   }
 
   free(imageBuffer);

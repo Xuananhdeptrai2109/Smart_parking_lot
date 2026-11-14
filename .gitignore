@@ -1,3 +1,6 @@
 firmware/**/mqtt_credentials.h
 firmware/**/anpr_credentials.h
 firmware/**/wifi_credentials.h
+.env.aws
+smart-parking-backend/.env.production
+deploy/aws/certs/
